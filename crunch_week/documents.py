@@ -5,8 +5,8 @@ from __future__ import annotations
 import hashlib
 import io
 import json
-import subprocess
 import re
+import subprocess
 import sys
 import zipfile
 from dataclasses import dataclass
