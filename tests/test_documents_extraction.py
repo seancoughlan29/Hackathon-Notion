@@ -72,8 +72,8 @@ def test_scanned_and_encrypted_pdf_rejected():
 
 
 def test_page_and_size_limits():
-    with pytest.raises(DocumentError, match="10 MB"):
-        read_document("large.txt", b"x" * (10 * 1024 * 1024 + 1))
+    with pytest.raises(DocumentError, match="25 MB"):
+        read_document("large.txt", b"x" * (25 * 1024 * 1024 + 1))
     writer = PdfWriter()
     for _ in range(51):
         writer.add_blank_page(100, 100)
@@ -207,3 +207,49 @@ def test_actual_openai_sdk_request_and_response_contract(monkeypatch, project):
         Document("x.txt", "digest", (raw_item().evidence,)), project.settings, "test-key"
     )
     assert len(items) == 1 and str(items[0].due_date) == "2026-10-09" and not warnings
+
+
+def _office_zip(files: dict[str, str]) -> bytes:
+    import io
+    import zipfile
+
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        for name, content in files.items():
+            archive.writestr(name, content)
+    return buffer.getvalue()
+
+
+def test_word_table_rows_stay_together():
+    w = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"'
+    xml = (
+        f"<w:document {w}><w:body><w:p><w:r><w:t>Outline</w:t></w:r></w:p><w:tbl><w:tr>"
+        "<w:tc><w:p><w:r><w:t>Essay</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>40%</w:t></w:r></w:p></w:tc>"
+        "</w:tr></w:tbl></w:body></w:document>"
+    )
+    document = read_document("outline.docx", _office_zip({"word/document.xml": xml}))
+    assert document.pages == ("Outline\nEssay | 40%\n",)
+
+
+def test_zip_reads_supported_files_and_skips_junk():
+    data = _office_zip(
+        {
+            "Week 1/outline.txt": "Essay due 2026-11-03",
+            "Week 1/table.csv": "Quiz,10%",
+            "__MACOSX/._outline.txt": "junk",
+            "Week 1/photo.jpg": "junk",
+        }
+    )
+    document = read_document("moodle.zip", data)
+    assert document.pages == ("[FILE outline.txt]\nEssay due 2026-11-03", "[FILE table.csv]\nQuiz,10%\n")
+
+
+def test_html_drops_scripts_and_keeps_table_cells():
+    html = b"<script>bad()</script><table><tr><td>Report</td><td>35%</td></tr></table>"
+    assert read_document("page.html", html).pages == ("Report | 35%\n",)
+
+
+@pytest.mark.parametrize("name", ["scan.png", "old.doc", "slides.key"])
+def test_unreadable_formats_explain_next_step(name):
+    with pytest.raises(DocumentError, match="PDF"):
+        read_document(name, b"x")

@@ -25,8 +25,9 @@ export function UploadDialog({
   return (
     <Modal title="From handbook to head start" close={close} busy={busy}>
       <p className="muted">
-        Upload module PDFs, Word docs, PowerPoints or text files. We'll pull out
-        assessments, deadlines and weights for you to review.
+        Upload module PDFs, Word docs, PowerPoints, spreadsheets, or a ZIP
+        straight from Moodle. We'll pull out assessments, deadlines and weights
+        for you to review.
       </p>
       {!config.openai_configured && (
         <div className="notice">
@@ -37,12 +38,15 @@ export function UploadDialog({
       <label className="upload-drop">
         <Upload size={30} />
         <strong>Choose module handbooks</strong>
-        <span>PDF, Word, PowerPoint or TXT · up to 5 files · 10 MB and 50 pages per file</span>
+        <span>
+          PDF, Word, PowerPoint, Excel, HTML, text or a ZIP of them · up to 5
+          files · 25 MB each
+        </span>
         <input
           aria-label="Choose module handbooks"
           type="file"
           multiple
-          accept=".pdf,.docx,.pptx,.txt,.md"
+          accept=".pdf,.docx,.docm,.dotx,.pptx,.pptm,.xlsx,.xlsm,.odt,.odp,.ods,.html,.htm,.rtf,.txt,.md,.csv,.tsv,.zip"
           disabled={busy || finished}
           onChange={(e) => {
             setFiles(Array.from(e.target.files ?? []));
@@ -105,9 +109,9 @@ export function UploadDialog({
             onClick={async () => {
               if (
                 files.length > 5 ||
-                files.some((file) => file.size > 10 * 1024 * 1024)
+                files.some((file) => file.size > 25 * 1024 * 1024)
               ) {
-                setError("Choose at most 5 files, each no larger than 10 MB.");
+                setError("Choose at most 5 files, each no larger than 25 MB.");
                 return;
               }
               setBusy(true);

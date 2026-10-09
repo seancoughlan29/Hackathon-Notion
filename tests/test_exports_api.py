@@ -82,7 +82,7 @@ def test_csrf_and_untrusted_host_rejected():
 
 
 def test_oversized_request_blocked(client):
-    assert client.post("/api/plan", content=b"x" * (11 * 1024 * 1024 + 1)).status_code == 413
+    assert client.post("/api/plan", content=b"x" * (27 * 1024 * 1024 + 1)).status_code == 413
 
 
 def test_no_secrets_or_silent_live_calls(client):
