@@ -6,9 +6,13 @@
 | `python` not found | Install Python 3.11/3.12 and add it to PATH. On Windows you can run the manual commands with `py -3.11` instead. |
 | Frontend is missing | Install Node 22.12+ or 24, run `npm ci` and `npm run build` in `frontend`, then restart FastAPI. |
 | Changes do not appear | Rebuild React or use Vite dev mode at port 5173. Production serves the compiled `dist` folder. |
-| AI extraction disabled | Put `OPENAI_API_KEY` in the root `.env`, not inside `frontend`, then restart the backend. Refresh the browser. |
-| OpenAI 401/403/404 | Check the API key, project/model access and `OPENAI_MODEL`. A ChatGPT subscription is not an API credential. |
-| OpenAI 429 | Check API quota/billing and rate limits. Wait before retrying. The local demo still works. |
+| AI extraction disabled | Set `AI_PROVIDER=azure` plus all three `AZURE_OPENAI_*` values, or `AI_PROVIDER=openai` plus `OPENAI_API_KEY`, in the root `.env`. Restart FastAPI and refresh the browser. The upload dialog lists missing settings. |
+| Azure endpoint rejected | Use the HTTPS resource root or `/openai/v1/` base URL. Remove a trailing `responses`; do not use the project URL containing `/api/projects/`. |
+| AI 401/403 | Check that the key belongs to the endpoint/resource. Azure also requires key authentication to be enabled and network access from the backend host. A ChatGPT subscription is not an API credential. |
+| AI 404 | For Azure, `AZURE_OPENAI_DEPLOYMENT` must match the exact deployment name, not the resource or model-family name. For OpenAI, check `OPENAI_MODEL` and project access. |
+| AI 400 | Confirm the deployment supports Responses with structured outputs. Try a small TXT file first. |
+| AI 429 | Check API quota/billing and rate limits. Wait before retrying. The local demo still works. |
+| Old environment values still used | Process environment variables take precedence over `.env`. Restart from a terminal without old overrides. |
 | Scanned PDF/blank page | OCR the file or remove blank pages. Alternatively upload a UTF-8 TXT assessment section. |
 | Document too long | Upload just the module's assessment section. The app does not silently truncate the document. |
 | Extraction failed after earlier files succeeded | Earlier files are saved. Retry the failed file; identical re-uploads preserve existing entries. |

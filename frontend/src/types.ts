@@ -72,7 +72,9 @@ export interface PlanResponse {
   warnings: string[];
 }
 export interface Config {
-  openai_configured: boolean;
+  ai_configured: boolean;
+  ai_provider_name: string;
+  ai_error: string | null;
   notion_configured: boolean;
   parent_configured: boolean;
   model: string;

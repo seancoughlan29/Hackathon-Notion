@@ -29,10 +29,10 @@ export function UploadDialog({
         straight from Moodle. We'll pull out assessments, deadlines and weights
         for you to review.
       </p>
-      {!config.openai_configured && (
+      {!config.ai_configured && (
         <div className="notice">
-          To extract real documents, set OPENAI_API_KEY in the backend .env file
-          and restart. You can use the demo or enter assessments manually now.
+          {config.ai_error} You can use the demo or enter assessments manually
+          now.
         </div>
       )}
       <label className="upload-drop">
@@ -68,7 +68,8 @@ export function UploadDialog({
           disabled={busy}
           onChange={(e) => setConsent(e.target.checked)}
         />
-        I agree to send these documents' text to OpenAI for extraction.
+        I agree to send these documents' text to {config.ai_provider_name} for
+        extraction.
       </label>
       <p className="small muted">
         The backend does not retain raw uploads after processing. Extracted
@@ -104,7 +105,7 @@ export function UploadDialog({
           <button
             className="button primary"
             disabled={
-              busy || !consent || !files.length || !config.openai_configured
+              busy || !consent || !files.length || !config.ai_configured
             }
             onClick={async () => {
               if (

@@ -20,6 +20,7 @@ from pydantic import Field, ValidationError
 from starlette.concurrency import run_in_threadpool
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
+from crunch_week.ai_config import AIConfigurationError, ai_status, load_ai_config
 from crunch_week.demo import demo_project
 from crunch_week.documents import MAX_BYTES, DocumentError, read_document
 from crunch_week.exports import calendar_export, csv_export
@@ -90,6 +91,7 @@ async def validation_handler(request, exc):
 
 
 @app.exception_handler(DocumentError)
+@app.exception_handler(AIConfigurationError)
 @app.exception_handler(ExtractionError)
 @app.exception_handler(NotionError)
 async def known_error_handler(request, exc):
@@ -115,9 +117,8 @@ def health():
 @app.get("/api/config")
 def config():
     return {
-        "openai_configured": bool(os.getenv("OPENAI_API_KEY")),
+        **ai_status(),
         "notion_configured": bool(os.getenv("NOTION_TOKEN")),
-        "model": os.getenv("OPENAI_MODEL", "gpt-4.1-mini"),
         "max_file_mb": 10,
         "parent_configured": bool(os.getenv("NOTION_PARENT_PAGE_ID")),
     }
@@ -151,13 +152,12 @@ async def extract(
     consent: Annotated[bool, Form()],
 ):
     if not consent:
-        raise HTTPException(400, "Confirm that the document text may be sent to OpenAI.")
+        raise HTTPException(400, "Confirm that the document text may be sent to your configured AI provider.")
     try:
         current = Project.model_validate_json(project)
     except ValidationError as exc:
         raise HTTPException(422, "Project validation failed. Check your dates and study settings.") from exc
-    if not os.getenv("OPENAI_API_KEY"):
-        raise HTTPException(400, "Set OPENAI_API_KEY in the backend .env file, then restart the server.")
+    ai = load_ai_config()
     data = await file.read(MAX_BYTES + 1)
     await file.close()
     if not extraction_lock.acquire(blocking=False):
@@ -168,8 +168,10 @@ async def extract(
             extract_document,
             document,
             current.settings,
-            os.environ["OPENAI_API_KEY"],
-            os.getenv("OPENAI_MODEL", "gpt-4.1-mini"),
+            ai.api_key,
+            ai.model,
+            base_url=ai.base_url,
+            provider_label=ai.label,
         )
         assessments, conflicts = merge_assessments(current.assessments, items)
         current.assessments = assessments

@@ -1,5 +1,15 @@
 # Release verification
 
+## Azure Foundry update — 9 October 2026
+
+The Azure provider update, integrated with the concurrent document-format additions, passed **102 backend tests, 4 frontend unit tests and 5 browser tests** (111 total). The production frontend build, Ruff checks and `git diff --check` passed. Browser tests ran against the Azure-enabled backend in the clean runtime environment; the final document parser was checked in the backend suite.
+
+New checks cover Azure resource/v1 endpoint normalization, rejecting project/operation URLs, explicit provider selection without fallback, deployment names on actual SDK HTTP requests, sanitized configuration/provider errors, key exclusion from API configuration, and provider-specific upload consent. AI HTTP calls in these checks were mocked; **a real Foundry request and live Notion sync still require local credentials and have not been verified**.
+
+The production npm dependency audit reports zero vulnerabilities. `npm ci` reported three development-dependency advisories (one moderate, two critical); those development dependencies are excluded from the runtime Docker image. The earlier coverage number below belongs to the initial release and was not recomputed for this update.
+
+## Initial release checks
+
 Verified on **9 October 2026** using Windows, Python **3.11.9**, Node **24.19.0**, and a headless Chromium browser. These are executed results, not proposed tests.
 
 | Check | Result |

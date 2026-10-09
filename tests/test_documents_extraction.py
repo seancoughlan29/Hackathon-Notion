@@ -161,7 +161,14 @@ def test_refusal_does_not_import_partial_results(monkeypatch, project):
         extract_document(Document("x.txt", "d", ("Hello",)), project.settings, "key")
 
 
-def test_actual_openai_sdk_request_and_response_contract(monkeypatch, project):
+@pytest.mark.parametrize(
+    "base_url,model",
+    [
+        ("https://api.openai.com/v1/", "gpt-4.1-mini"),
+        ("https://example.services.ai.azure.com/openai/v1/", "handbook-reader"),
+    ],
+)
+def test_actual_openai_sdk_request_and_response_contract(monkeypatch, project, base_url, model):
     import json
 
     import httpx
@@ -169,6 +176,9 @@ def test_actual_openai_sdk_request_and_response_contract(monkeypatch, project):
 
     def handler(request):
         body = json.loads(request.content)
+        assert str(request.url) == base_url + "responses"
+        assert request.headers["authorization"] == "Bearer test-key"
+        assert body["model"] == model
         assert body["text"]["format"]["type"] == "json_schema"
         assert body["text"]["format"]["strict"] is True
         assert body["text"]["format"]["schema"]["additionalProperties"] is False
@@ -180,7 +190,7 @@ def test_actual_openai_sdk_request_and_response_contract(monkeypatch, project):
                 "object": "response",
                 "created_at": 1791540000,
                 "status": "completed",
-                "model": "gpt-4.1-mini",
+                "model": model,
                 "output": [
                     {
                         "id": "msg_test",
@@ -204,7 +214,7 @@ def test_actual_openai_sdk_request_and_response_contract(monkeypatch, project):
         lambda **kwargs: ActualOpenAI(**kwargs, http_client=httpx.Client(transport=httpx.MockTransport(handler))),
     )
     items, warnings = extract_document(
-        Document("x.txt", "digest", (raw_item().evidence,)), project.settings, "test-key"
+        Document("x.txt", "digest", (raw_item().evidence,)), project.settings, "test-key", model, base_url=base_url
     )
     assert len(items) == 1 and str(items[0].due_date) == "2026-10-09" and not warnings
 
@@ -253,3 +263,31 @@ def test_html_drops_scripts_and_keeps_table_cells():
 def test_unreadable_formats_explain_next_step(name):
     with pytest.raises(DocumentError, match="PDF"):
         read_document(name, b"x")
+
+
+def test_azure_error_is_actionable_and_does_not_echo_provider_body(monkeypatch, project):
+    import httpx
+    from openai import OpenAI as ActualOpenAI
+
+    monkeypatch.setattr(
+        "crunch_week.extraction.OpenAI",
+        lambda **kwargs: ActualOpenAI(
+            **kwargs,
+            http_client=httpx.Client(
+                transport=httpx.MockTransport(
+                    lambda request: httpx.Response(404, json={"error": {"message": "private-provider-detail"}})
+                )
+            ),
+        ),
+    )
+    with pytest.raises(ExtractionError) as error:
+        extract_document(
+            Document("x.txt", "d", ("Hello",)),
+            project.settings,
+            "test-key",
+            base_url="https://example.openai.azure.com/openai/v1/",
+            provider_label="Azure AI Foundry",
+        )
+    assert "Azure AI Foundry" in str(error.value)
+    assert "deployment" in str(error.value)
+    assert "private-provider-detail" not in str(error.value)

@@ -15,7 +15,16 @@ from crunch_week.planner import build_plan
 
 @pytest.fixture
 def client(monkeypatch):
-    for key in ["OPENAI_API_KEY", "NOTION_TOKEN", "NOTION_PARENT_PAGE_ID"]:
+    for key in [
+        "AI_PROVIDER",
+        "AZURE_OPENAI_API_KEY",
+        "AZURE_OPENAI_ENDPOINT",
+        "AZURE_OPENAI_DEPLOYMENT",
+        "OPENAI_API_KEY",
+        "OPENAI_MODEL",
+        "NOTION_TOKEN",
+        "NOTION_PARENT_PAGE_ID",
+    ]:
         monkeypatch.delenv(key, raising=False)
     return TestClient(app, base_url="http://localhost", headers={"X-Crunch-Week": "1"})
 
@@ -88,7 +97,8 @@ def test_oversized_request_blocked(client):
 def test_no_secrets_or_silent_live_calls(client):
     config = client.get("/api/config").json()
     assert not config["openai_configured"] and not config["notion_configured"]
-    assert "OPENAI_API_KEY" not in json.dumps(config)
+    assert not config["ai_configured"]
+    assert "api_key" not in config
     project = client.get("/api/project/new").json()
     response = client.post(
         "/api/extract", files={"file": ("x.txt", b"Hello")}, data={"project": json.dumps(project), "consent": "true"}
@@ -115,8 +125,9 @@ def test_upload_api_complete_flow_with_mocked_extractor(client, monkeypatch, pro
 
     monkeypatch.setenv("OPENAI_API_KEY", "test-key-never-sent")
 
-    def extract(document, settings, key, model):
+    def extract(document, settings, key, model, **kwargs):
         assert document.pages == ("Essay due next month",)
+        assert kwargs["base_url"] == "https://api.openai.com/v1/"
         return [Assessment(module="PS402", title="Essay", notes="Confirm date.")], ["Deadline needs confirmation"]
 
     monkeypatch.setattr("crunch_week.api.extract_document", extract)
@@ -145,3 +156,47 @@ def test_extract_lock_rejects_concurrent_calls(client, monkeypatch, project):
         assert response.status_code == 409
     finally:
         extraction_lock.release()
+
+
+def test_azure_config_and_upload_use_only_azure(client, monkeypatch, project):
+    monkeypatch.setenv("AI_PROVIDER", "azure")
+    monkeypatch.setenv("AZURE_OPENAI_API_KEY", "private-azure-test-key")
+    monkeypatch.setenv("OPENAI_API_KEY", "private-public-test-key")
+    monkeypatch.setenv("AZURE_OPENAI_ENDPOINT", "https://example.services.ai.azure.com/")
+    monkeypatch.setenv("AZURE_OPENAI_DEPLOYMENT", "handbook-reader")
+    result = client.get("/api/config")
+    assert result.json()["ai_configured"]
+    assert result.json()["ai_provider_name"] == "Azure AI Foundry"
+    assert not result.json()["openai_configured"]
+    assert "private-" not in result.text
+
+    def extract(document, settings, key, model, **kwargs):
+        assert key == "private-azure-test-key"
+        assert model == "handbook-reader"
+        assert kwargs["base_url"] == "https://example.services.ai.azure.com/openai/v1/"
+        assert kwargs["provider_label"] == "Azure AI Foundry"
+        return [], []
+
+    monkeypatch.setattr("crunch_week.api.extract_document", extract)
+    response = client.post(
+        "/api/extract",
+        files={"file": ("outline.txt", b"No assessments")},
+        data={"project": project.model_dump_json(), "consent": "true"},
+    )
+    assert response.status_code == 200
+
+
+def test_missing_azure_configuration_never_falls_back(client, monkeypatch, project):
+    monkeypatch.setenv("AI_PROVIDER", "azure")
+    monkeypatch.setenv("OPENAI_API_KEY", "private-public-test-key")
+    config = client.get("/api/config").json()
+    assert not config["ai_configured"]
+    assert "AZURE_OPENAI_DEPLOYMENT" in config["ai_error"]
+    response = client.post(
+        "/api/extract",
+        files={"file": ("outline.txt", b"No assessments")},
+        data={"project": project.model_dump_json(), "consent": "true"},
+    )
+    assert response.status_code == 400
+    assert "AZURE_OPENAI_API_KEY" in response.json()["detail"]
+    assert "private-public-test-key" not in response.text

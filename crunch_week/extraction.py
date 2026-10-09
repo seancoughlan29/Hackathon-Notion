@@ -1,4 +1,4 @@
-"""OpenAI adapter: schema-constrained extraction followed by local validation."""
+"""OpenAI/Azure adapter: structured extraction followed by local validation."""
 
 from __future__ import annotations
 
@@ -128,16 +128,19 @@ def extract_document(
     api_key: str,
     model: str = "gpt-4.1-mini",
     progress: Callable[[int, int], None] | None = None,
+    *,
+    base_url: str = "https://api.openai.com/v1/",
+    provider_label: str = "OpenAI",
 ) -> tuple[list[Assessment], list[str]]:
     if not api_key.strip():
-        raise ExtractionError("Add an OpenAI API key in the sidebar first.")
+        raise ExtractionError("Set the AI provider's API key in the backend .env file, then restart the server.")
     if not model.strip() or len(model) > 120:
         raise ExtractionError("Enter a valid model ID.")
     result: list[Assessment] = []
     warnings: list[str] = []
     pieces = chunks(document)
     try:
-        with OpenAI(api_key=api_key.strip(), timeout=60.0, max_retries=2) as client:
+        with OpenAI(api_key=api_key.strip(), base_url=base_url, timeout=60.0, max_retries=2) as client:
             for index, piece in enumerate(pieces, 1):
                 if progress:
                     progress(index, len(pieces))
@@ -161,17 +164,21 @@ def extract_document(
                 warnings.extend(parsed.warnings[:50])
                 warnings.extend(conflicts)
     except (APITimeoutError, APIConnectionError) as exc:
-        raise ExtractionError("OpenAI could not be reached in time. Check your connection and retry.") from exc
+        raise ExtractionError(
+            f"{provider_label} could not be reached in time. Check the endpoint, network access and connection."
+        ) from exc
     except APIStatusError as exc:
         messages = {
-            401: "OpenAI rejected the API key.",
-            403: "This API key cannot access that model.",
-            429: "OpenAI rate limit or quota reached. Check API billing and retry later.",
-            404: "That model is not available to this API key.",
+            401: f"{provider_label} rejected the API key. Check that it belongs to the configured resource.",
+            403: f"{provider_label} denied access. Check model permissions, API-key access and network restrictions.",
+            429: f"{provider_label} rate limit or quota reached. Check billing/quota and retry later.",
+            404: f"{provider_label} model/deployment not found. Check the endpoint and exact deployment name.",
+            400: f"{provider_label} rejected the request. Use a model that supports Responses structured outputs.",
         }
         raise ExtractionError(
             messages.get(
-                exc.status_code, f"OpenAI returned HTTP {exc.status_code}. Check the model and try a shorter document."
+                exc.status_code,
+                f"{provider_label} returned HTTP {exc.status_code}. Check the model and try a shorter document.",
             )
         ) from exc
     except (ValidationError, ValueError) as exc:

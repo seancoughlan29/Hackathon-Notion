@@ -38,7 +38,7 @@ The execution-policy option affects this one launch only; it does not change you
 
 - Responsive dashboard with weekly deadline counts, module weights, a calendar, and upcoming assessments.
 - PDF/TXT ingestion with size/page/text limits, PDF worker timeout, and explicit errors for scanned/encrypted files.
-- OpenAI Responses API structured extraction into validated schemas, with source pages and excerpts.
+- Azure AI Foundry or OpenAI Responses API structured extraction into validated schemas, with source pages and excerpts.
 - Review/edit/delete/manual-entry workflow. Editing a field clears its reviewed flag.
 - Unknown deadlines stay visible; they are never silently converted to invented dates.
 - Deterministic study planning with free weekdays, daily start time, daily capacity, days off, session length and deadline buffers.
@@ -50,14 +50,28 @@ The execution-policy option affects this one launch only; it does not change you
 
 ## Enable real PDF extraction
 
-Copy `.env.example` to `.env` in the root folder and set:
+Copy `.env.example` to `.env` in the root folder, beside `start.ps1`. Existing `.env` files are never overwritten by the app.
+
+**Azure AI Foundry**: deploy an Azure OpenAI model that supports Responses structured outputs, then set:
 
 ```dotenv
+AI_PROVIDER=azure
+AZURE_OPENAI_ENDPOINT=https://YOUR-RESOURCE.services.ai.azure.com/openai/v1/
+AZURE_OPENAI_API_KEY=your_resource_key
+AZURE_OPENAI_DEPLOYMENT=your_exact_deployment_name
+```
+
+The deployment name can differ from the model name. Both `.services.ai.azure.com` and `.openai.azure.com` resource endpoints are supported. The endpoint can be the resource root or end in `/openai/v1/`; remove a trailing `responses` copied from the deployment Details panel. Do not use the Foundry project endpoint ending in `/api/projects/...`. This adapter uses API-key authentication and the v1 API, so no API-version, project ID, tenant ID, or separate OpenAI key is needed. Azure must allow key authentication and network access from the computer running FastAPI.
+
+**Public OpenAI alternative**:
+
+```dotenv
+AI_PROVIDER=openai
 OPENAI_API_KEY=your_openai_api_key
 OPENAI_MODEL=gpt-4.1-mini
 ```
 
-Restart the backend after changes. The model is configurable; use a model available to your API project that supports Responses structured outputs. API calls may incur charges; the frontend requests permission to send document text before extraction. The app sends extracted text, not raw PDF files, and sets `store=False`. This does not override the provider's own data-retention policies.
+Restart the backend after changes and refresh the browser. The provider is selected explicitly; Azure configuration never silently falls back to public OpenAI. `/api/config` reports missing configuration without returning keys. `ai_configured=true` means the settings are present and structurally valid, **not** that live credentials or quota have been tested. Upload a short synthetic TXT/PDF to verify the real connection. API calls may incur charges; the frontend requests permission to send document text to the selected provider. The app sends extracted text, not raw PDF files, and sets `store=False`. This does not override the provider's own data-retention policies.
 
 In **Semester & availability**, set the semester start/end and planning start. Upload PDFs/TXT files, open each extracted assessment, verify its date/time/weight against the original, set remaining work, and mark it reviewed. AI extraction may miss assessments: compare the final list with your source documents, too.
 
@@ -77,8 +91,8 @@ No API keys go into the React source, browser storage, project backup, Git, or f
 
 1. Create an internal connection/integration in your Notion workspace. Grant **read, insert and update content** capabilities.
 2. Create a normal parent page for your semester, then share/connect that page with the integration.
-3. Set `NOTION_TOKEN` in `.env`. Optionally set `NOTION_PARENT_PAGE_ID` to the parent page UUID. Restart FastAPI.
-4. Open **Notion & exports**. Paste the parent page URL/ID and click **Create semester database**.
+3. Set `NOTION_TOKEN` in `.env`. Optionally set `NOTION_PARENT_PAGE_ID` to the parent page UUID or URL. Restart FastAPI.
+4. Open **Notion & exports**. Paste the parent page URL/ID (or use the configured default) and click **Create semester database**.
 5. Review all assessments, then click **Sync to Notion**.
 
 The backend uses Notion API version **2026-03-11** and the data-source API. It creates `Semester calendar`, `Deadlines`, and `Study plan` views, with semester-week and pressure fields on entries. Each view filters out superseded entries. A default Notion view may still show them, preserving history.
