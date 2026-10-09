@@ -6,7 +6,9 @@ import hashlib
 import io
 import json
 import subprocess
+import re
 import sys
+import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -64,6 +66,80 @@ def _pdf_pages(data: bytes) -> list[str]:
         raise DocumentError("This PDF could not be read. Export a fresh, text-based PDF.") from exc
 
 
+_W = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
+_A = "{http://schemas.openxmlformats.org/drawingml/2006/main}"
+MAX_UNZIPPED = 60 * 1024 * 1024
+
+
+def _open_office_zip(data: bytes, kind: str) -> zipfile.ZipFile:
+    try:
+        archive = zipfile.ZipFile(io.BytesIO(data))
+    except zipfile.BadZipFile as exc:
+        raise DocumentError(f"This {kind} file could not be opened. Re-save it and try again.") from exc
+    if sum(info.file_size for info in archive.infolist()) > MAX_UNZIPPED:
+        raise DocumentError(f"This {kind} file is too large once unpacked.")
+    return archive
+
+
+def _parse_xml(archive: zipfile.ZipFile, member: str):
+    from xml.etree import ElementTree
+
+    try:
+        return ElementTree.fromstring(archive.read(member))
+    except (KeyError, ElementTree.ParseError) as exc:
+        raise DocumentError("This Office file is damaged or not a real Word/PowerPoint file.") from exc
+
+
+def _docx_pages(data: bytes) -> list[str]:
+    archive = _open_office_zip(data, "Word")
+    root = _parse_xml(archive, "word/document.xml")
+    body = root.find(f"{_W}body")
+    if body is None:
+        raise DocumentError("This Word file has no readable body.")
+    lines: list[str] = []
+    for block in body:
+        if block.tag == f"{_W}p":
+            text = "".join(t.text or "" for t in block.iter(f"{_W}t")).strip()
+            if text:
+                lines.append(text)
+        elif block.tag == f"{_W}tbl":
+            # Keep table rows on one line so assessment/weight/date stay together.
+            for row in block.iter(f"{_W}tr"):
+                cells = [
+                    " ".join("".join(t.text or "" for t in p.iter(f"{_W}t")) for p in cell.iter(f"{_W}p")).strip()
+                    for cell in row.iter(f"{_W}tc")
+                ]
+                if any(cells):
+                    lines.append(" | ".join(cells))
+    # Word has no fixed pages; group into ~3,000 character sections for source references.
+    pages: list[str] = []
+    current = ""
+    for line in lines:
+        if current and len(current) + len(line) > 3000:
+            pages.append(current)
+            current = ""
+        current += line + "\n"
+    if current:
+        pages.append(current)
+    return pages
+
+
+def _pptx_pages(data: bytes) -> list[str]:
+    archive = _open_office_zip(data, "PowerPoint")
+    slides = sorted(
+        (n for n in archive.namelist() if re.fullmatch(r"ppt/slides/slide\d+\.xml", n)),
+        key=lambda n: int(re.findall(r"\d+", n)[-1]),
+    )
+    if len(slides) > MAX_PAGES:
+        raise DocumentError(f"Presentations must have at most {MAX_PAGES} slides.")
+    pages = []
+    for name in slides:
+        root = _parse_xml(archive, name)
+        paras = ["".join(t.text or "" for t in p.iter(f"{_A}t")).strip() for p in root.iter(f"{_A}p")]
+        pages.append("\n".join(p for p in paras if p))
+    return [p for p in pages if p.strip()]
+
+
 def read_document(name: str, data: bytes) -> Document:
     safe_name = name.replace("\\", "/").rsplit("/", 1)[-1][:255]
     if not data or len(data) > MAX_BYTES:
@@ -90,7 +166,13 @@ def read_document(name: str, data: bytes) -> Document:
         if result.returncode or "error" in payload:
             raise DocumentError(payload.get("error", "PDF could not be read."))
         pages = payload["pages"]
-    elif suffix == ".txt":
+    elif suffix in (".docx", ".pptx"):
+        pages = _docx_pages(data) if suffix == ".docx" else _pptx_pages(data)
+        if not pages:
+            raise DocumentError("No readable text found in this file.")
+        if sum(len(p) for p in pages) > MAX_CHARS:
+            raise DocumentError("Document is too long. Upload the assessment section only.")
+    elif suffix in (".txt", ".md"):
         try:
             text = data.decode("utf-8-sig")
         except UnicodeDecodeError as exc:
@@ -99,7 +181,7 @@ def read_document(name: str, data: bytes) -> Document:
             raise DocumentError("Upload readable text of 1–120,000 characters.")
         pages = [text]
     else:
-        raise DocumentError("Only PDF and UTF-8 .txt files are supported.")
+        raise DocumentError("Supported files: PDF, Word (.docx), PowerPoint (.pptx) and text (.txt, .md).")
     return Document(safe_name, hashlib.sha256(data).hexdigest(), tuple(pages))
 
 

@@ -25,7 +25,7 @@ export function UploadDialog({
   return (
     <Modal title="From handbook to head start" close={close} busy={busy}>
       <p className="muted">
-        Upload text-based module PDFs or UTF-8 text files. We'll pull out
+        Upload module PDFs, Word docs, PowerPoints or text files. We'll pull out
         assessments, deadlines and weights for you to review.
       </p>
       {!config.openai_configured && (
@@ -37,12 +37,12 @@ export function UploadDialog({
       <label className="upload-drop">
         <Upload size={30} />
         <strong>Choose module handbooks</strong>
-        <span>PDF or TXT · up to 5 files · 10 MB and 50 pages per file</span>
+        <span>PDF, Word, PowerPoint or TXT · up to 5 files · 10 MB and 50 pages per file</span>
         <input
           aria-label="Choose module handbooks"
           type="file"
           multiple
-          accept=".pdf,.txt"
+          accept=".pdf,.docx,.pptx,.txt,.md"
           disabled={busy || finished}
           onChange={(e) => {
             setFiles(Array.from(e.target.files ?? []));
