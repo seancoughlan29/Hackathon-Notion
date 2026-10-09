@@ -411,7 +411,10 @@ if __name__ == "__main__":
     if sys.platform != "win32":
         import resource
 
-        resource.setrlimit(resource.RLIMIT_AS, (768 * 1024 * 1024, 768 * 1024 * 1024))
+        try:
+            resource.setrlimit(resource.RLIMIT_AS, (768 * 1024 * 1024, 768 * 1024 * 1024))
+        except (ValueError, OSError):
+            pass  # macOS does not support this limit
     try:
         print(json.dumps({"pages": _pdf_pages(sys.stdin.buffer.read(MAX_BYTES + 1))}))
     except DocumentError as error:
