@@ -11,12 +11,24 @@ export function addDays(value: string, count: number): string {
   date.setUTCDate(date.getUTCDate() + count);
   return date.toISOString().slice(0, 10);
 }
+export function daysBetween(from: string, to: string): number {
+  return Math.round(
+    (Date.parse(`${to}T12:00:00Z`) - Date.parse(`${from}T12:00:00Z`)) /
+      86_400_000,
+  );
+}
+export function todayIn(timeZone: string): string {
+  try {
+    return new Intl.DateTimeFormat("en-CA", { timeZone }).format(new Date());
+  } catch {
+    return new Date().toISOString().slice(0, 10);
+  }
+}
+/** A theme-aware CSS colour; the six tokens live in styles.css. */
 export function moduleColor(module: string): string {
   let hash = 0;
   for (const char of module) hash = (hash * 31 + char.charCodeAt(0)) | 0;
-  return ["#658168", "#b67453", "#8581aa", "#53879a", "#a58332"][
-    Math.abs(hash) % 5
-  ];
+  return `var(--module-${(Math.abs(hash) % 6) + 1})`;
 }
 export function monthCells(month: string): (string | null)[] {
   const first = new Date(`${month}-01T12:00:00Z`);

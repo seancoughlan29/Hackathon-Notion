@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { FileText, Upload } from "lucide-react";
+import { FileText, Info, Upload } from "lucide-react";
 import type { Config, Project } from "../types";
 import { upload, message } from "../api";
 import { Modal } from "./Modal";
@@ -31,12 +31,15 @@ export function UploadDialog({
       </p>
       {!config.ai_configured && (
         <div className="notice">
-          {config.ai_error} You can use the demo or enter assessments manually
-          now.
+          <Info size={18} aria-hidden="true" />
+          <span>
+            {config.ai_error} You can use the demo or enter assessments manually
+            now.
+          </span>
         </div>
       )}
       <label className="upload-drop">
-        <Upload size={30} />
+        <Upload size={28} aria-hidden="true" />
         <strong>Choose module handbooks</strong>
         <span>
           PDF, Word, PowerPoint, Excel, HTML, text or a ZIP of them · up to 5
@@ -54,14 +57,18 @@ export function UploadDialog({
           }}
         />
       </label>
-      {files.map((file, i) => (
-        <div className="file-row" key={`${file.name}-${i}`}>
-          <FileText size={17} />
-          <span>{file.name}</span>
-          <small>{(file.size / 1024).toFixed(0)} KB</small>
-        </div>
-      ))}
-      <label className="check-row">
+      {files.length > 0 && (
+        <ul className="file-list">
+          {files.map((file, i) => (
+            <li className="file-row" key={`${file.name}-${i}`}>
+              <FileText size={18} aria-hidden="true" />
+              <span>{file.name}</span>
+              <small>{(file.size / 1024).toFixed(0)} KB</small>
+            </li>
+          ))}
+        </ul>
+      )}
+      <label className={`confirm ${consent ? "is-inked" : ""}`}>
         <input
           type="checkbox"
           checked={consent}
@@ -77,7 +84,7 @@ export function UploadDialog({
         misread details; review against the original.
       </p>
       {status && (
-        <p className="notice" role="status">
+        <p className={`notice ${busy ? "info" : "success"}`} role="status">
           {busy && <span className="spinner" />} {status}
         </p>
       )}
@@ -87,9 +94,9 @@ export function UploadDialog({
         </p>
       )}
       {!!warnings.length && (
-        <details open>
+        <details className="notice" open>
           <summary>Extraction notes ({warnings.length})</summary>
-          <ul className="small">
+          <ul>
             {warnings.map((warning, i) => (
               <li key={i}>{warning}</li>
             ))}

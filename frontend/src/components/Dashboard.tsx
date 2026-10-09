@@ -1,21 +1,26 @@
 import { useState } from "react";
+import type { CSSProperties } from "react";
 import {
   ArrowRight,
-  CalendarDays,
   ChevronLeft,
   ChevronRight,
-  Clock3,
-  Sparkles,
+  FileSearch,
+  Info,
   TriangleAlert,
 } from "lucide-react";
 import type { Assessment, PlanResponse, Project, Tab } from "../types";
 import {
   addDays,
   dateLabel,
+  daysBetween,
   moduleColor,
   monthCells,
   shiftMonth,
+  todayIn,
 } from "../utils";
+
+/** The semester strip animates in once, until its last step has played. */
+let revealed = false;
 
 export function Dashboard({
   project,
@@ -32,6 +37,7 @@ export function Dashboard({
   const [month, setMonth] = useState(project.settings.plan_from.slice(0, 7));
   const [showStudy, setShowStudy] = useState(false);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [reveal] = useState(() => !revealed);
   const reviewed = project.assessments.filter((item) => item.reviewed);
   const crunch = result.weeks.filter((week) => week.Pressure === "Crunch");
   const remaining = project.assessments.length - reviewed.length;
@@ -67,157 +73,280 @@ export function Dashboard({
         (block) => block.start.slice(0, 10) === selectedDate,
       )
     : [];
+
+  // Where today falls on the strip, and each deadline's day within its week.
+  const { semester_start, semester_end, timezone } = project.settings;
+  const lastDay = daysBetween(semester_start, semester_end);
+  const today = todayIn(timezone);
+  const todayOffset = daysBetween(semester_start, today);
+  const currentWeek =
+    todayOffset >= 0 && todayOffset <= lastDay
+      ? Math.floor(todayOffset / 7) + 1
+      : null;
+  const isPast = (week: number) =>
+    todayOffset > lastDay || (currentWeek !== null && week < currentWeek);
+  const emptyWeek = (): Assessment[][] => Array.from({ length: 7 }, () => []);
+  const dueDays = new Map<number, Assessment[][]>();
+  for (const item of reviewed) {
+    if (!item.due_date || item.due_date < semester_start) continue;
+    if (item.due_date > semester_end) continue;
+    const offset = daysBetween(semester_start, item.due_date);
+    const week = Math.floor(offset / 7) + 1;
+    const days = dueDays.get(week) ?? emptyWeek();
+    days[offset % 7].push(item);
+    dueDays.set(week, days);
+  }
+  const crunchAhead = new Set(
+    crunch.filter((week) => !isPast(week.Week)).map((week) => week.Week),
+  );
+  const weekOf = (day: string) =>
+    Math.floor(daysBetween(semester_start, day) / 7) + 1;
+  const hours = (value: number) => Math.round(value * 10) / 10;
+  const peakIndex = peak ? result.weeks.indexOf(peak) : -1;
+  const studyHours =
+    result.plan.blocks.reduce((sum, block) => sum + block.minutes, 0) / 60;
+
   return (
     <>
-      <div className="stats">
-        <div className="stat">
-          <span>
-            <CalendarDays size={17} /> Assessments
-          </span>
-          <strong>
-            {project.assessments.length}
-            <small>
-              across{" "}
+      <section
+        className={`hero ${reveal ? "reveal" : ""}`}
+        aria-labelledby="hero-title"
+        onAnimationEnd={(event) => {
+          if (event.animationName === "note-in") revealed = true;
+        }}
+      >
+        {remaining > 0 && (
+          <button
+            className="hero-review"
+            onClick={() => navigate("assessments")}
+          >
+            <FileSearch size={18} aria-hidden="true" />
+            <span>
+              {remaining} assessment{remaining === 1 ? "" : "s"} need review
+              before they appear in your plan.
+            </span>
+            <ArrowRight size={18} aria-hidden="true" />
+          </button>
+        )}
+        <div className="hero-head">
+          <div>
+            <h2 id="hero-title">Your semester, at a glance.</h2>
+            <p className="hero-caption">
+              {selectedWeek
+                ? `Week ${selectedWeek.Week} selected: ${selectedWeek.Deadlines} deadline${selectedWeek.Deadlines === 1 ? "" : "s"} from ${dateLabel(selectedWeek.Starting)}, about ${hours(selectedWeek["Effort (h)"])} h of work. Select it again to show every week.`
+                : `${result.weeks.length} weeks from ${dateLabel(semester_start)} to ${dateLabel(semester_end)}.${currentWeek ? ` You're in week ${currentWeek}.` : ""} Select a week to list its deadlines.`}
+            </p>
+          </div>
+          <ul className="legend" aria-label="Key">
+            <li>
+              <span className="key clear" />
+              Clear
+            </li>
+            <li>
+              <span className="key steady">
+                <i />
+              </span>
+              Steady
+            </li>
+            <li>
+              <span className="key busy">
+                <i />
+                <i />
+              </span>
+              Busy
+            </li>
+            <li>
+              <span className="key crunch">
+                <i />
+                <i />
+                <i />
+              </span>
+              Crunch
+            </li>
+          </ul>
+        </div>
+        <div
+          className="strip"
+          role="group"
+          aria-label="Weekly deadline counts"
+          data-dense={result.weeks.length > 16 ? "" : undefined}
+          style={
+            {
+              "--cols": result.weeks.length,
+              "--max": max,
+            } as CSSProperties
+          }
+        >
+          {todayOffset >= 0 && (
+            <span
+              className={`strip-past ${currentWeek ? "" : "is-over"}`}
+              aria-hidden="true"
+              style={
+                {
+                  "--week": currentWeek ? currentWeek - 1 : result.weeks.length,
+                  "--day": currentWeek ? todayOffset % 7 : 0,
+                } as CSSProperties
+              }
+            />
+          )}
+          {result.weeks.map((week, i) => (
+            <button
+              key={week.Week}
+              className={`week ${isPast(week.Week) ? "past" : ""}`}
+              data-pressure={week.Pressure.toLowerCase()}
+              onClick={() =>
+                setSelected(selected === week.Week ? null : week.Week)
+              }
+              aria-label={`Week ${week.Week}, from ${dateLabel(week.Starting)}: ${week.Deadlines} deadline${week.Deadlines === 1 ? "" : "s"}${week.Pressure === "Crunch" ? ", crunch week" : ""}`}
+              aria-pressed={selected === week.Week}
+              title={`${dateLabel(week.Starting)} · ${week.Deadlines} deadlines · ${week["Effort (h)"]}h estimated work`}
+              style={{ "--i": i } as CSSProperties}
+            >
+              <span className="week-count" aria-hidden="true">
+                {week.Deadlines > 0 && `${week.Deadlines} due`}
+              </span>
+              <span className="week-stack" aria-hidden="true">
+                {Array.from({ length: week.Deadlines }, (_, j) => (
+                  <i key={j} style={{ "--j": j } as CSSProperties} />
+                ))}
+              </span>
+              <span className="week-ruler" aria-hidden="true">
+                {(dueDays.get(week.Week) ?? emptyWeek()).map((items, day) => (
+                  <span key={day}>
+                    {items.slice(0, 3).map((item, k) => (
+                      <i
+                        key={item.id}
+                        style={
+                          {
+                            "--module": moduleColor(item.module),
+                            "--k": k,
+                          } as CSSProperties
+                        }
+                      />
+                    ))}
+                  </span>
+                ))}
+              </span>
+              <span className="week-num" aria-hidden="true">
+                {week.Week}
+              </span>
+              <span className="week-date" aria-hidden="true">
+                {dateLabel(week.Starting)}
+              </span>
+              {week.Week === currentWeek ? (
+                <span className="week-today" aria-hidden="true">
+                  Today
+                </span>
+              ) : (
+                <span />
+              )}
+            </button>
+          ))}
+        </div>
+        <div
+          className={`crunch-note ${peak?.Deadlines ? "has-peak" : ""} ${peak?.Pressure === "Crunch" && !isPast(peak.Week) ? "is-crunch" : ""}`}
+          style={
+            {
+              "--at": (peakIndex + 0.5) / result.weeks.length,
+            } as CSSProperties
+          }
+        >
+          <div>
+            <h3>
+              {peak?.Deadlines
+                ? `Week ${peak.Week} needs a head start.`
+                : "A calmer semester starts here."}
+            </h3>
+            <p>
+              {peak?.Deadlines
+                ? `${peak.Deadlines} deadlines land from ${dateLabel(peak.Starting)}. Your plan works backwards to make space before the rush.`
+                : "Review your assessments to see where the busy weeks land."}
+            </p>
+            {peak && Object.keys(peak["Module weights"]).length > 0 && (
+              <ul
+                className="weights"
+                aria-label={`Module weights in week ${peak.Week}`}
+              >
+                {Object.entries(peak["Module weights"]).map(
+                  ([module, weight]) => (
+                    <li
+                      key={module}
+                      style={
+                        { "--module": moduleColor(module) } as CSSProperties
+                      }
+                    >
+                      <i className="dot" />
+                      {module.split(" · ")[0]} <b>{weight}%</b>
+                    </li>
+                  ),
+                )}
+              </ul>
+            )}
+          </div>
+          <button className="text-link" onClick={() => navigate("study")}>
+            See your study plan
+          </button>
+        </div>
+        <div className="ledger">
+          <p>
+            <b>{project.assessments.length}</b>
+            <span>
+              <strong>Assessments</strong> across{" "}
               {new Set(project.assessments.map((item) => item.module)).size}{" "}
               modules
-            </small>
-          </strong>
-        </div>
-        <div className="stat">
-          <span>
-            <TriangleAlert size={17} /> Crunch weeks
-          </span>
-          <strong>
-            {crunch.length}
-            <small>3+ deadlines in one week</small>
-          </strong>
-        </div>
-        <div className="stat">
-          <span>
-            <Clock3 size={17} /> Study scheduled
-          </span>
-          <strong>
-            {result.plan.blocks.reduce((sum, block) => sum + block.minutes, 0) /
-              60}
-            <em>h</em>
-            <small>{result.plan.blocks.length} manageable blocks</small>
-          </strong>
-        </div>
-        <div className={`stat ${shortfall > 0 ? "stat-warning" : ""}`}>
-          <span>
-            <Sparkles size={17} />{" "}
-            {remaining ? "Ready for review" : "Unscheduled work"}
-          </span>
-          <strong>
-            {remaining || shortfall}
-            {!remaining && <em>h</em>}
-            <small>
+            </span>
+          </p>
+          <p>
+            <b>{crunch.length}</b>
+            <span>
+              <strong>Crunch weeks</strong> 3+ deadlines in one week
+            </span>
+          </p>
+          <p>
+            <b>
+              {studyHours}
+              <small>h</small>
+            </b>
+            <span>
+              <strong>Study scheduled</strong> {result.plan.blocks.length}{" "}
+              manageable blocks
+            </span>
+          </p>
+          <p
+            className={
+              remaining ? "is-pencil" : shortfall > 0 ? "is-warn" : undefined
+            }
+          >
+            <b>
+              {remaining > 0 && <FileSearch size={20} aria-hidden="true" />}
+              {!remaining && shortfall > 0 && (
+                <TriangleAlert size={20} aria-hidden="true" />
+              )}
+              {remaining || shortfall}
+              {!remaining && <small>h</small>}
+            </b>
+            <span>
+              <strong>
+                {remaining ? "Ready for review" : "Unscheduled work"}
+              </strong>{" "}
               {remaining
                 ? "check the source before planning"
                 : shortfall
                   ? "adjust your available hours"
                   : "all estimated work has a place"}
-            </small>
-          </strong>
-        </div>
-      </div>
-      {remaining > 0 && (
-        <button
-          className="notice notice-button"
-          onClick={() => navigate("assessments")}
-        >
-          {remaining} assessment{remaining === 1 ? "" : "s"} need review before
-          they appear in your plan. <ArrowRight size={16} />
-        </button>
-      )}
-      <div className="overview-grid">
-        <section className="panel workload">
-          <div className="panel-heading">
-            <div>
-              <span className="eyebrow">THE BIG PICTURE</span>
-              <h2>Your semester, at a glance.</h2>
-            </div>
-            <span className="badge neutral">{result.weeks.length} weeks</span>
-          </div>
-          <div
-            className="chart"
-            role="group"
-            aria-label="Weekly deadline counts"
-          >
-            {result.weeks.map((week) => (
-              <button
-                key={week.Week}
-                className={`chart-column ${selected === week.Week ? "active" : ""}`}
-                onClick={() =>
-                  setSelected(selected === week.Week ? null : week.Week)
-                }
-                aria-label={`Week ${week.Week}: ${week.Deadlines} deadlines`}
-                aria-pressed={selected === week.Week}
-                title={`${dateLabel(week.Starting)} · ${week.Deadlines} deadlines · ${week["Effort (h)"]}h estimated work`}
-              >
-                <span className="bar-area">
-                  <span
-                    className={`bar ${week.Pressure.toLowerCase()}`}
-                    style={{
-                      height: `${Math.max(5, (week.Deadlines / max) * 100)}%`,
-                    }}
-                  >
-                    {week.Deadlines > 0 && <b>{week.Deadlines}</b>}
-                  </span>
-                </span>
-                <span className="week-number">W{week.Week}</span>
-              </button>
-            ))}
-          </div>
-          <div className="chart-footer">
-            <span>Deadlines per teaching week · click to explore</span>
-            <span>
-              <i className="dot green" /> Steady <i className="dot coral" />{" "}
-              Crunch
             </span>
-          </div>
-          <p className="small muted">
-            Week 1 starts {dateLabel(project.settings.semester_start)}. Break
-            weeks are included; confirm your university's teaching-week dates.
           </p>
-        </section>
-        <aside className="crunch-card">
-          <span className="eyebrow">A LITTLE FORESIGHT GOES A LONG WAY</span>
-          <div className="crunch-illustration" aria-hidden="true">
-            <div className="mini-sheet back" />
-            <div className="mini-sheet">
-              <CalendarDays size={22} />
-              <b>{peak?.Week ?? "—"}</b>
-              <small>WEEK</small>
-            </div>
-            <span className="spark">✳</span>
-          </div>
-          <h2>
-            {peak?.Deadlines
-              ? `Week ${peak.Week} needs a head start.`
-              : "A calmer semester starts here."}
-          </h2>
-          <p>
-            {peak?.Deadlines
-              ? `${peak.Deadlines} deadlines land from ${dateLabel(peak.Starting)}. Your plan works backwards to make space before the rush.`
-              : "Review your assessments to see where the busy weeks land."}
-          </p>
-          {peak &&
-            Object.entries(peak["Module weights"]).map(([module, weight]) => (
-              <span className="weight-pill" key={module}>
-                {module.split(" · ")[0]} · {weight}%
-              </span>
-            ))}
-          <button className="text-link" onClick={() => navigate("study")}>
-            See your study plan <ArrowRight size={17} />
-          </button>
-        </aside>
-      </div>
-      <div className="lower-grid">
-        <section className="panel calendar-panel">
-          <div className="panel-heading">
-            <h2>{monthTitle}</h2>
-            <div className="calendar-controls">
+        </div>
+        <p className="hero-footnote">
+          Week 1 starts {dateLabel(project.settings.semester_start)}. Break
+          weeks are included; confirm your university's teaching-week dates.
+        </p>
+      </section>
+      <div className="overview-lower">
+        <section className="panel calendar" aria-labelledby="calendar-title">
+          <div className="calendar-head">
+            <h2 id="calendar-title">{monthTitle}</h2>
+            <div className="calendar-nav">
               <button
                 className="icon-button"
                 aria-label="Previous month"
@@ -226,7 +355,7 @@ export function Dashboard({
                   setSelectedDate(null);
                 }}
               >
-                <ChevronLeft size={18} />
+                <ChevronLeft size={20} />
               </button>
               <button
                 className="icon-button"
@@ -236,11 +365,11 @@ export function Dashboard({
                   setSelectedDate(null);
                 }}
               >
-                <ChevronRight size={18} />
+                <ChevronRight size={20} />
               </button>
             </div>
           </div>
-          <label className="check-row small">
+          <label className="check-row">
             <input
               type="checkbox"
               checked={showStudy}
@@ -250,7 +379,7 @@ export function Dashboard({
           </label>
           <div className="calendar-grid">
             {["M", "T", "W", "T", "F", "S", "S"].map((day, i) => (
-              <div className="calendar-weekday" key={i}>
+              <div className="calendar-weekday" key={i} aria-hidden="true">
                 {day}
               </div>
             ))}
@@ -263,24 +392,34 @@ export function Dashboard({
                     (block) => day && block.start.slice(0, 10) === day,
                   )
                 : [];
+              const inCrunch =
+                !!day &&
+                day >= semester_start &&
+                day <= semester_end &&
+                crunchAhead.has(weekOf(day));
               return day ? (
                 <button
                   key={day}
-                  className={`calendar-day ${selectedDate === day ? "chosen" : ""} ${items.length >= 2 ? "crowded" : ""}`}
+                  className={`calendar-day ${selectedDate === day ? "chosen" : ""} ${items.length >= 2 ? "crowded" : ""} ${inCrunch ? "in-crunch" : ""}`}
                   onClick={() => setSelectedDate(day)}
-                  aria-label={`${dateLabel(day)}: ${items.length} deadlines, ${blocks.length} study blocks`}
+                  aria-label={`${dateLabel(day)}: ${items.length} deadlines, ${blocks.length} study blocks${inCrunch ? ", crunch week" : ""}`}
+                  aria-current={day === today ? "date" : undefined}
                 >
                   <span>{Number(day.slice(-2))}</span>
-                  <div className="calendar-dots">
+                  <span className="calendar-dots">
                     {items.slice(0, 3).map((item) => (
                       <i
                         className="dot"
                         key={item.id}
-                        style={{ background: moduleColor(item.module) }}
+                        style={
+                          {
+                            "--module": moduleColor(item.module),
+                          } as CSSProperties
+                        }
                       />
                     ))}
                     {blocks.length > 0 && <i className="dot study-dot" />}
-                  </div>
+                  </span>
                 </button>
               ) : (
                 <div key={`blank-${i}`} />
@@ -296,13 +435,24 @@ export function Dashboard({
                   key={item.id}
                   onClick={() => edit(item)}
                 >
-                  {item.due_time?.slice(0, 5) || "All day"} · {item.title}
+                  <i
+                    className="dot"
+                    style={
+                      { "--module": moduleColor(item.module) } as CSSProperties
+                    }
+                  />
+                  <span>
+                    {item.due_time?.slice(0, 5) || "All day"} · {item.title}
+                  </span>
                 </button>
               ))}
               {showStudy &&
                 dailyBlocks.map((block) => (
-                  <div className="small" key={block.id}>
-                    {block.start.slice(11, 16)} · Study: {block.title}
+                  <div className="day-study" key={block.id}>
+                    <i className="dot study-dot" />
+                    <span>
+                      {block.start.slice(11, 16)} · Study: {block.title}
+                    </span>
                   </div>
                 ))}
               {!dailyItems.length && (!showStudy || !dailyBlocks.length) && (
@@ -311,65 +461,65 @@ export function Dashboard({
             </div>
           )}
         </section>
-        <section className="panel next-up">
-          <div className="panel-heading">
-            <div>
-              <span className="eyebrow">ONE THING AT A TIME</span>
-              <h2>
-                {selectedWeek
-                  ? `Week ${selectedWeek.Week} deadlines`
-                  : "Coming up next"}
-              </h2>
-            </div>
+        <section className="panel next-up" aria-labelledby="next-up-title">
+          <div className="panel-head">
+            <h2 id="next-up-title">
+              {selectedWeek
+                ? `Week ${selectedWeek.Week} deadlines`
+                : "Coming up next"}
+            </h2>
             <button
               className="text-link"
               onClick={() => navigate("assessments")}
             >
-              View all <ArrowRight size={16} />
+              View all
             </button>
           </div>
           {upcoming.length ? (
-            upcoming.map((item) => (
-              <button
-                className="deadline-row"
-                key={item.id}
-                onClick={() => edit(item)}
-              >
-                <span className="date-tile">
-                  <b>{Number(item.due_date?.slice(-2))}</b>
-                  <small>
-                    {dateLabel(item.due_date).split(" ").slice(1).join(" ")}
-                  </small>
-                </span>
-                <span className="deadline-info">
-                  <strong>{item.title}</strong>
-                  <small>
-                    <i
-                      className="dot"
-                      style={{ background: moduleColor(item.module) }}
-                    />
-                    {item.module}
-                  </small>
-                </span>
-                <span className="badge neutral">
-                  {item.weight_percent === null
-                    ? "—"
-                    : `${item.weight_percent}%`}
-                </span>
-              </button>
-            ))
+            <ol className="deadlines">
+              {upcoming.map((item) => (
+                <li key={item.id}>
+                  <button
+                    className={`deadline ${item.due_date && crunchAhead.has(weekOf(item.due_date)) ? "in-crunch" : ""}`}
+                    onClick={() => edit(item)}
+                  >
+                    <span className="deadline-date">
+                      <b>{Number(item.due_date?.slice(-2))}</b>
+                      <small>
+                        {dateLabel(item.due_date).split(" ").slice(1).join(" ")}
+                      </small>
+                    </span>
+                    <span className="deadline-info">
+                      <strong>{item.title}</strong>
+                      <small>
+                        <i
+                          className="dot"
+                          style={
+                            {
+                              "--module": moduleColor(item.module),
+                            } as CSSProperties
+                          }
+                        />
+                        {item.module}
+                      </small>
+                    </span>
+                    <span className="deadline-weight">
+                      {item.weight_percent === null
+                        ? "—"
+                        : `${item.weight_percent}%`}
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ol>
           ) : (
-            <div className="empty-small">
-              No reviewed deadlines in this window.
-            </div>
+            <p className="empty-small">No reviewed deadlines in this window.</p>
           )}
-          <div className="tip">
-            <Sparkles size={19} />
-            <p>
-              Percentages belong to each module. Your plan uses estimated hours
-              to balance the work.
-            </p>
-          </div>
+          <p className="tip">
+            <Info size={18} aria-hidden="true" />
+            Percentages belong to each module. Your plan uses estimated hours to
+            balance the work.
+          </p>
         </section>
       </div>
     </>

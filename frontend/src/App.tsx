@@ -1,20 +1,17 @@
 import { useEffect, useRef, useState } from "react";
+import type { CSSProperties } from "react";
 import {
-  ArrowRight,
-  CalendarDays,
-  CheckCheck,
-  ChevronDown,
-  Clock3,
+  CalendarClock,
+  ChartNoAxesColumn,
   Download,
-  FileText,
-  LayoutDashboard,
-  Leaf,
+  FlaskConical,
+  ListChecks,
   Plus,
   RotateCcw,
   Settings2,
+  Share,
   Upload,
   X,
-  Zap,
 } from "lucide-react";
 import type { Assessment, Config, PlanResponse, Project, Tab } from "./types";
 import { message, request, saveBlob } from "./api";
@@ -25,14 +22,14 @@ import { SettingsEditor } from "./components/SettingsEditor";
 import { UploadDialog } from "./components/UploadDialog";
 import { StudyPlan } from "./components/StudyPlan";
 import { NotionPanel } from "./components/NotionPanel";
-import { dateLabel } from "./utils";
+import { addDays, dateLabel, daysBetween, todayIn } from "./utils";
 
 const STORAGE_KEY = "crunch-week-project-v1";
 const nav = [
-  { id: "overview", label: "Overview", icon: LayoutDashboard },
-  { id: "assessments", label: "Assessments", icon: FileText },
-  { id: "study", label: "Study plan", icon: Clock3 },
-  { id: "notion", label: "Notion & exports", icon: ArrowRight },
+  { id: "overview", label: "Overview", icon: ChartNoAxesColumn },
+  { id: "assessments", label: "Assessments", icon: ListChecks },
+  { id: "study", label: "Study plan", icon: CalendarClock },
+  { id: "notion", label: "Notion & exports", icon: Share },
 ] as const;
 
 export default function App() {
@@ -168,10 +165,11 @@ export default function App() {
   if (!project || !config)
     return (
       <div className="loading-screen">
-        <div className="brand-mark">
-          <Zap />
-        </div>
-        <h1>Crunch Week</h1>
+        <BrandMark />
+        <h1 className="wordmark" aria-label="Crunch Week">
+          <b>crunch</b>
+          <span>week</span>
+        </h1>
         <p role={error ? "alert" : "status"}>
           {error || "Making room for your semester…"}
         </p>
@@ -186,51 +184,59 @@ export default function App() {
       </div>
     );
   const count = project.assessments.filter((item) => !item.reviewed).length;
+  const { semester_start, semester_end } = project.settings;
+  const termDays = daysBetween(semester_start, semester_end) + 1;
+  const elapsed = Math.min(
+    Math.max(
+      daysBetween(semester_start, todayIn(project.settings.timezone)) + 1,
+      0,
+    ),
+    termDays,
+  );
   return (
-    <div className="app-shell">
+    <div className="app">
       <aside className="sidebar">
         <a
           className="brand"
           href="#"
+          aria-label="Crunch Week overview"
           onClick={(e) => {
             e.preventDefault();
             setTab("overview");
           }}
         >
-          <span className="brand-mark">
-            <Zap size={24} />
-          </span>
-          <span>
-            crunch<span className="brand-light">week</span>
-            <small>A LITTLE LESS LAST-MINUTE.</small>
+          <BrandMark />
+          <span className="wordmark" aria-hidden="true">
+            <b>crunch</b>
+            <span>week</span>
           </span>
         </a>
-        <div className="workspace-label">YOUR WORKSPACE</div>
-        <button
-          className="semester-switch"
-          onClick={() => setModal("settings")}
-        >
-          <span className="semester-icon">
-            <CalendarDays size={19} />
+        <button className="semester" onClick={() => setModal("settings")}>
+          <span className="semester-name">{project.name}</span>
+          <span className="semester-dates">
+            {dateLabel(semester_start)} – {dateLabel(semester_end)}
           </span>
-          <span>
-            <strong>{project.name}</strong>
-            <small>
-              {dateLabel(project.settings.semester_start)} —{" "}
-              {dateLabel(project.settings.semester_end)}
-            </small>
+          <Settings2 size={16} aria-hidden="true" />
+          <span
+            className="semester-progress"
+            aria-hidden="true"
+            style={
+              {
+                "--progress": `${termDays > 0 ? (elapsed / termDays) * 100 : 0}%`,
+              } as CSSProperties
+            }
+          >
+            <i />
           </span>
-          <ChevronDown size={15} />
         </button>
-        <nav aria-label="Main navigation">
+        <nav className="nav" aria-label="Main navigation">
           {nav.map(({ id, label, icon: Icon }) => (
             <button
               key={id}
-              className={tab === id ? "active" : ""}
               onClick={() => setTab(id)}
               aria-current={tab === id ? "page" : undefined}
             >
-              <Icon size={19} />
+              <Icon size={20} aria-hidden="true" />
               {label}
               {id === "assessments" && count > 0 && (
                 <b className="nav-count">{count}</b>
@@ -238,64 +244,45 @@ export default function App() {
             </button>
           ))}
         </nav>
-        <div className="sidebar-bottom">
-          <div className="sidebar-note">
-            <Leaf size={21} />
-            <strong>
-              Plan ahead.
-              <br />
-              Breathe a little.
-            </strong>
-            <p>Your semester is bigger than your busiest week.</p>
-          </div>
-          <button
-            className="sidebar-action"
-            onClick={() => setModal("settings")}
-          >
-            <Settings2 size={17} />
+        <div className="sidebar-foot">
+          <button className="side-link" onClick={() => setModal("settings")}>
+            <Settings2 size={18} aria-hidden="true" />
             Semester & availability
           </button>
-          <div className="local-label">
-            <i className="dot" />
-            {saved ? "Saved in this tab" : "In-memory session"}
+          <div className="saved">
+            <span className={`saved-state ${saved ? "is-saved" : ""}`}>
+              <i aria-hidden="true" />
+              {saved ? "Saved in this tab" : "In-memory session"}
+            </span>
+            <span className="saved-actions">
+              <button
+                className="icon-button"
+                title="Download project backup"
+                aria-label="Download project backup"
+                onClick={() =>
+                  saveBlob(
+                    new Blob([JSON.stringify(project, null, 2)], {
+                      type: "application/json",
+                    }),
+                    "crunch-week-project.json",
+                  )
+                }
+              >
+                <Download size={18} />
+              </button>
+              <button
+                className="icon-button"
+                title="Restore project backup"
+                aria-label="Restore project backup"
+                onClick={() => restoreInput.current?.click()}
+              >
+                <RotateCcw size={18} />
+              </button>
+            </span>
           </div>
         </div>
       </aside>
-      <main>
-        <header className="topbar">
-          <div className="breadcrumb">
-            Your workspace <span>/</span>{" "}
-            <strong>{nav.find((item) => item.id === tab)?.label}</strong>
-          </div>
-          <div className="top-actions">
-            <button
-              className="icon-button"
-              title="Download project backup"
-              aria-label="Download project backup"
-              onClick={() =>
-                saveBlob(
-                  new Blob([JSON.stringify(project, null, 2)], {
-                    type: "application/json",
-                  }),
-                  "crunch-week-project.json",
-                )
-              }
-            >
-              <Download size={18} />
-            </button>
-            <button
-              className="icon-button"
-              title="Restore project backup"
-              aria-label="Restore project backup"
-              onClick={() => restoreInput.current?.click()}
-            >
-              <RotateCcw size={18} />
-            </button>
-            <span className="avatar" aria-label="Student workspace">
-              CW
-            </span>
-          </div>
-        </header>
+      <main className="main">
         <input
           className="sr-only"
           type="file"
@@ -322,13 +309,8 @@ export default function App() {
           }}
         />
         <div className="content">
-          <div className="page-heading">
+          <header className="page-head">
             <div>
-              <span className="eyebrow">
-                {tab === "overview"
-                  ? "LESS PANIC. MORE POSSIBILITY."
-                  : "CRUNCH WEEK / YOUR SEMESTER"}
-              </span>
               <h1>
                 {tab === "overview"
                   ? "See the busy weeks coming."
@@ -352,10 +334,10 @@ export default function App() {
                 setTab("assessments");
               }}
             >
-              <Upload size={17} />
+              <Upload size={18} />
               Upload handbooks
             </button>
-          </div>
+          </header>
           {error && (
             <div className="error global-error" role="alert">
               <span>{error}</span>
@@ -364,31 +346,31 @@ export default function App() {
                 aria-label="Dismiss error"
                 onClick={() => setError("")}
               >
-                <X size={17} />
+                <X size={18} />
               </button>
             </div>
           )}
           {project.demo && (
             <div className="demo-banner">
               <span>
-                <Sparkle />
+                <FlaskConical size={16} aria-hidden="true" />
                 You're exploring a synthetic demo. These are not real university
                 deadlines.
               </span>
               <button
+                className="button secondary small"
                 disabled={busy}
                 onClick={() => replaceWith("/project/new")}
               >
-                Start my semester <ArrowRight size={14} />
+                Start my semester
               </button>
             </div>
           )}
           {!project.assessments.length && tab === "overview" ? (
-            <>
-              <section className="welcome panel">
-                <div>
-                  <span className="badge success">YOUR NEXT HEAD START</span>
-                  <h2>
+            <div className="view" key="welcome">
+              <section className="welcome" aria-labelledby="welcome-title">
+                <div className="welcome-copy">
+                  <h2 id="welcome-title">
                     Three handbooks.
                     <br />
                     One clear semester.
@@ -402,7 +384,7 @@ export default function App() {
                       className="button primary"
                       onClick={() => setModal("upload")}
                     >
-                      <Upload size={17} />
+                      <Upload size={18} />
                       Upload your first handbook
                     </button>
                     <button
@@ -410,52 +392,34 @@ export default function App() {
                       disabled={busy}
                       onClick={() => replaceWith("/demo")}
                     >
-                      Explore the demo <ArrowRight size={17} />
+                      Explore the demo
                     </button>
                   </div>
                   <button className="text-link" onClick={newAssessment}>
-                    <Plus size={15} />
+                    <Plus size={16} />
                     Or add an assessment manually
                   </button>
                 </div>
-                <div className="welcome-art" aria-hidden="true">
-                  <div className="art-paper">
-                    <span>YOUR SEMESTER</span>
-                    <b>You've got this.</b>
-                    <div className="art-bars">
-                      {[32, 48, 27, 80, 42, 56, 31, 98, 61, 36].map(
-                        (height, i) => (
-                          <i style={{ height: `${height}%` }} key={i} />
-                        ),
-                      )}
-                    </div>
-                    <small>A plan before the pile-up.</small>
-                  </div>
-                  <div className="art-tag">
-                    <CheckCheck size={19} />A little more breathing room.
-                  </div>
-                </div>
+                <GhostStrip
+                  start={semester_start}
+                  weeks={Math.floor((termDays - 1) / 7) + 1}
+                />
               </section>
-              <div className="steps">
+              <ol className="steps">
                 {[
-                  ["01", "Upload", "Bring your module outlines together."],
-                  ["02", "Review", "Check the dates against the source."],
-                  [
-                    "03",
-                    "Make a plan",
-                    "Find room for work before it piles up.",
-                  ],
-                ].map(([n, title, copy]) => (
-                  <div key={n}>
-                    <span>{n}</span>
+                  ["Upload", "Bring your module outlines together."],
+                  ["Review", "Check the dates against the source."],
+                  ["Make a plan", "Find room for work before it piles up."],
+                ].map(([title, copy]) => (
+                  <li key={title}>
                     <h3>{title}</h3>
                     <p>{copy}</p>
-                  </div>
+                  </li>
                 ))}
-              </div>
-            </>
+              </ol>
+            </div>
           ) : (
-            <>
+            <div className="view" key={tab}>
               {planning && (
                 <p className="planning" role="status">
                   <span className="spinner" />
@@ -531,13 +495,10 @@ export default function App() {
                   }}
                 />
               )}
-            </>
+            </div>
           )}
-          <footer>
-            <span>
-              <Leaf size={14} />
-              Built for student life. Room for real life.
-            </span>
+          <footer className="footer">
+            <span>Built for student life. Room for real life.</span>
             <span>
               Your time, thoughtfully planned · {project.settings.timezone}
             </span>
@@ -585,6 +546,71 @@ export default function App() {
     </div>
   );
 }
-function Sparkle() {
-  return <Zap size={14} />;
+
+/** The empty semester, drawn in pencil before any deadline is added. */
+function GhostStrip({ start, weeks }: { start: string; weeks: number }) {
+  const count = Math.max(1, weeks);
+  return (
+    <figure className="ghost">
+      <div
+        className="ghost-strip"
+        aria-hidden="true"
+        data-dense={count > 16 ? "" : undefined}
+        style={{ "--cols": count } as CSSProperties}
+      >
+        {Array.from({ length: count }, (_, i) => (
+          <span className="ghost-week" key={i}>
+            <i className="ghost-slot" />
+            <i className="ghost-ruler" />
+            <b>{i + 1}</b>
+            <small>{dateLabel(addDays(start, i * 7))}</small>
+          </span>
+        ))}
+      </div>
+      <figcaption>
+        Your {count} weeks from {dateLabel(start)}. Deadlines appear here, week
+        by week, once you add them.
+      </figcaption>
+    </figure>
+  );
+}
+
+function BrandMark() {
+  return (
+    <svg className="brand-mark" viewBox="0 0 32 32" aria-hidden="true">
+      <rect className="brand-mark-bg" width="32" height="32" rx="9" />
+      <rect
+        className="brand-mark-bar"
+        x="6.5"
+        y="18"
+        width="3.5"
+        height="6"
+        rx="1"
+      />
+      <rect
+        className="brand-mark-bar"
+        x="11.75"
+        y="14"
+        width="3.5"
+        height="10"
+        rx="1"
+      />
+      <rect
+        className="brand-mark-hot"
+        x="17"
+        y="7"
+        width="3.5"
+        height="17"
+        rx="1"
+      />
+      <rect
+        className="brand-mark-bar"
+        x="22.25"
+        y="19"
+        width="3.5"
+        height="5"
+        rx="1"
+      />
+    </svg>
+  );
 }

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { CalendarX2, FileText } from "lucide-react";
 import type { Assessment, AssessmentKind } from "../types";
 import { Modal } from "./Modal";
 
@@ -23,6 +24,7 @@ export function AssessmentEditor({
       busy={busy}
     >
       <form
+        className="stack-form"
         onSubmit={async (event) => {
           event.preventDefault();
           setBusy(true);
@@ -37,8 +39,19 @@ export function AssessmentEditor({
           }
         }}
       >
+        <figure className="evidence">
+          <figcaption>
+            <FileText size={16} aria-hidden="true" />
+            Source: {draft.source_file}
+            {draft.source_page ? `, page ${draft.source_page}` : ""}
+          </figcaption>
+          <blockquote>
+            {draft.evidence ||
+              "Manual entry. Check this assessment against your official module information."}
+          </blockquote>
+        </figure>
         <div className="form-grid">
-          <label>
+          <label className="field">
             Module
             <input
               required
@@ -48,7 +61,7 @@ export function AssessmentEditor({
               placeholder="e.g. CS401 · Applied AI"
             />
           </label>
-          <label>
+          <label className="field">
             Assessment name
             <input
               required
@@ -57,7 +70,7 @@ export function AssessmentEditor({
               onChange={(e) => change({ title: e.target.value })}
             />
           </label>
-          <label>
+          <label className="field">
             Type
             <select
               value={draft.kind}
@@ -77,7 +90,7 @@ export function AssessmentEditor({
               ))}
             </select>
           </label>
-          <label>
+          <label className="field">
             Weight within module (%)
             <input
               type="number"
@@ -94,7 +107,7 @@ export function AssessmentEditor({
               }
             />
           </label>
-          <label>
+          <label className="field">
             Deadline date
             <input
               type="date"
@@ -107,7 +120,7 @@ export function AssessmentEditor({
               }
             />
           </label>
-          <label>
+          <label className="field">
             Deadline time (optional)
             <input
               type="time"
@@ -116,7 +129,14 @@ export function AssessmentEditor({
               onChange={(e) => change({ due_time: e.target.value || null })}
             />
           </label>
-          <label className="span-two">
+          {!draft.due_date && (
+            <p className="pencil-note span-two">
+              <CalendarX2 size={18} aria-hidden="true" />
+              An unknown date is allowed. It stays visible, but cannot be
+              scheduled.
+            </p>
+          )}
+          <label className="field span-two">
             Remaining work (hours)
             <input
               type="number"
@@ -136,27 +156,17 @@ export function AssessmentEditor({
               finished.
             </small>
           </label>
+          <label className="field span-two">
+            Notes
+            <textarea
+              maxLength={2000}
+              rows={3}
+              value={draft.notes}
+              onChange={(e) => change({ notes: e.target.value })}
+            />
+          </label>
         </div>
-        <div className="evidence">
-          <span className="eyebrow">
-            SOURCE · {draft.source_file}
-            {draft.source_page ? ` · PAGE ${draft.source_page}` : ""}
-          </span>
-          <blockquote>
-            {draft.evidence ||
-              "Manual entry. Check this assessment against your official module information."}
-          </blockquote>
-        </div>
-        <label>
-          Notes
-          <textarea
-            maxLength={2000}
-            rows={3}
-            value={draft.notes}
-            onChange={(e) => change({ notes: e.target.value })}
-          />
-        </label>
-        <label className="check-row">
+        <label className={`confirm ${draft.reviewed ? "is-inked" : ""}`}>
           <input
             type="checkbox"
             checked={draft.reviewed}
@@ -166,12 +176,6 @@ export function AssessmentEditor({
           />
           I checked the date, time and weighting against the source.
         </label>
-        {!draft.due_date && (
-          <p className="muted small">
-            An unknown date is allowed. It stays visible, but cannot be
-            scheduled.
-          </p>
-        )}
         {error && (
           <p role="alert" className="error">
             {error}

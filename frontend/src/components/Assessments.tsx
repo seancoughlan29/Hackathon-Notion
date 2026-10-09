@@ -1,5 +1,15 @@
 import { useState } from "react";
-import { Check, FileSearch, Pencil, Plus, Search, Trash2 } from "lucide-react";
+import type { CSSProperties } from "react";
+import {
+  Check,
+  CheckCheck,
+  FileSearch,
+  Pencil,
+  Plus,
+  Search,
+  Trash2,
+  TriangleAlert,
+} from "lucide-react";
 import type { Assessment, Project } from "../types";
 import { dateLabel, moduleColor } from "../utils";
 
@@ -27,25 +37,45 @@ export function Assessments({
         .includes(search.toLowerCase()) &&
       (!onlyUnreviewed || !item.reviewed),
   );
+  const total = project.assessments.length;
+  const reviewed = project.assessments.filter((item) => item.reviewed).length;
   return (
-    <section className="panel">
-      <div className="panel-heading">
+    <section className="panel assessments" aria-labelledby="assessments-title">
+      <div className="panel-head">
         <div>
-          <span className="eyebrow">TRUST, THEN VERIFY</span>
-          <h2>Every deadline. In one place.</h2>
+          <h2 id="assessments-title">Every deadline. In one place.</h2>
+          <p>
+            Open an assessment to check its source, correct the details, and
+            estimate your remaining work.
+          </p>
         </div>
         <button className="button primary" onClick={add}>
-          <Plus size={17} />
+          <Plus size={18} />
           Add assessment
         </button>
       </div>
-      <p className="muted">
-        Open an assessment to check its source, correct the details, and
-        estimate your remaining work.
-      </p>
+      {total > 0 && (
+        <div className="review-meter">
+          <span
+            className="review-meter-bar"
+            aria-hidden="true"
+            style={
+              { "--done": `${(reviewed / total) * 100}%` } as CSSProperties
+            }
+          >
+            <i />
+          </span>
+          <span>
+            <strong>
+              {reviewed} of {total}
+            </strong>{" "}
+            reviewed against the source
+          </span>
+        </div>
+      )}
       <div className="table-toolbar">
         <label className="search">
-          <Search size={17} />
+          <Search size={18} aria-hidden="true" />
           <input
             aria-label="Search assessments"
             placeholder="Search modules or assessments…"
@@ -63,7 +93,7 @@ export function Assessments({
         </label>
       </div>
       <div className="table-wrap">
-        <table>
+        <table className="assessment-table">
           <thead>
             <tr>
               <th>Assessment / module</th>
@@ -78,59 +108,76 @@ export function Assessments({
           </thead>
           <tbody>
             {items.map((item) => (
-              <tr key={item.id}>
-                <td>
+              <tr
+                key={item.id}
+                className={item.reviewed ? "is-inked" : "is-pencil"}
+              >
+                <td className="cell-title">
                   <button className="table-title" onClick={() => edit(item)}>
                     {item.title}
                   </button>
                   <span className="module-label">
                     <i
                       className="dot"
-                      style={{ background: moduleColor(item.module) }}
+                      style={
+                        {
+                          "--module": moduleColor(item.module),
+                        } as CSSProperties
+                      }
                     />
                     {item.module}
                   </span>
                 </td>
-                <td>
-                  {dateLabel(item.due_date)}
-                  <small className="block muted">
+                <td className={`cell-due ${item.due_date ? "" : "is-unknown"}`}>
+                  <span className="due-date">{dateLabel(item.due_date)}</span>
+                  <small className="due-time">
                     {item.due_time?.slice(0, 5) ||
                       (item.due_date ? "Time not specified" : "Check source")}
                   </small>
                 </td>
-                <td>
+                <td
+                  className={`cell-weight ${item.weight_percent === null ? "is-unknown" : ""}`}
+                >
+                  <span className="cell-label" aria-hidden="true">
+                    Weight
+                  </span>
                   {item.weight_percent === null
                     ? "Unknown"
                     : `${item.weight_percent}%`}
                 </td>
-                <td>{item.effort_minutes / 60}h</td>
-                <td>
+                <td className="cell-effort">
+                  <span className="cell-label" aria-hidden="true">
+                    Work left
+                  </span>
+                  {item.effort_minutes / 60}h
+                </td>
+                <td className="cell-review">
                   <span
-                    className={`badge ${item.reviewed ? "success" : "warning"}`}
+                    className={`chip ${item.reviewed ? "inked" : "pencil"}`}
                   >
                     {item.reviewed ? (
-                      <Check size={12} />
+                      <Check size={15} aria-hidden="true" />
                     ) : (
-                      <FileSearch size={12} />
+                      <FileSearch size={15} aria-hidden="true" />
                     )}
                     {item.reviewed ? "Reviewed" : "Check source"}
                   </span>
                 </td>
-                <td>
+                <td className="cell-actions">
                   <div className="row-actions">
                     <button
                       className="icon-button"
                       aria-label={`Edit ${item.title}`}
                       onClick={() => edit(item)}
                     >
-                      <Pencil size={15} />
+                      <Pencil size={17} />
                     </button>
                     <button
                       className="icon-button danger"
                       aria-label={`Remove ${item.title}`}
                       onClick={() => remove(item.id)}
                     >
-                      <Trash2 size={15} />
+                      <Trash2 size={17} />
                     </button>
                   </div>
                 </td>
@@ -140,17 +187,15 @@ export function Assessments({
         </table>
       </div>
       {!items.length && (
-        <div className="empty-small">
+        <p className="empty-small">
           No assessments match. Upload a handbook or add one manually.
-        </div>
+        </p>
       )}
       {project.assessments.some((item) => !item.reviewed) && (
         <div className="bulk-review">
-          <p className="small muted">
-            Already checked every entry against your handbooks?
-          </p>
+          <p>Already checked every entry against your handbooks?</p>
           <button className="button secondary" onClick={approve}>
-            <Check size={16} />
+            <CheckCheck size={18} />
             Mark all as reviewed
           </button>
         </div>
@@ -158,6 +203,7 @@ export function Assessments({
       {warnings.length > 0 && (
         <details className="notice">
           <summary>
+            <TriangleAlert size={18} aria-hidden="true" />
             {warnings.length} detail{warnings.length > 1 ? "s" : ""} to check
           </summary>
           <ul>
