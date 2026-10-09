@@ -1,0 +1,14 @@
+services:
+  crunch-week:
+    build: .
+    ports:
+      - "127.0.0.1:8000:8000"
+    environment:
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4.1-mini}
+      NOTION_TOKEN: ${NOTION_TOKEN:-}
+      NOTION_PARENT_PAGE_ID: ${NOTION_PARENT_PAGE_ID:-}
+      ALLOWED_HOSTS: localhost,127.0.0.1
+    mem_limit: 1g
+    cpus: 2
+    restart: unless-stopped
